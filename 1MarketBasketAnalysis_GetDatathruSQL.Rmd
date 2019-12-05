@@ -1,0 +1,84 @@
+---
+title: "1MarketBasketAnalysis_GetDatathruSQL"
+author: "SuninChoi"
+date: "12/5/2019"
+output: html_document
+Connect SQL db and Rstudio in order to bring data and save them in my local db
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Connect SQL db and Rstudio
+### Import dataset from SQL
+#### Settings
+
+```{r Import dataset from SQL (echo = TRUE)}
+
+##Import df 'line_item'
+# Settings
+db_user <- 'data_student_berlin'
+db_password <- 'waai_has_shitty_internet'
+db_name <- 'pricehub'
+db_table <- 'line_item'
+db_host <- '34.89.228.59' # for local access
+db_port <- 3306
+
+# Read data from db
+mydb <-  dbConnect(MySQL(), user = db_user, password = db_password,
+                   dbname = db_name, host = db_host, port = db_port)
+s <- paste0("select * from ", db_table)
+rs <- dbSendQuery(mydb, s)
+line_item <-  fetch(rs, n = -1)
+on.exit(dbDisconnect(mydb))
+
+##Import df 'orders'
+# Settings
+db_user <- 'data_student_berlin'
+db_password <- 'waai_has_shitty_internet'
+db_name <- 'pricehub'
+db_table <- 'orders'
+db_host <- '34.89.228.59' # for local access
+db_port <- 3306
+
+# Read data from db
+mydb <-  dbConnect(MySQL(), user = db_user, password = db_password,
+                   dbname = db_name, host = db_host, port = db_port)
+s <- paste0("select * from ", db_table)
+rs <- dbSendQuery(mydb, s)
+orders <-  fetch(rs, n = -1)
+on.exit(dbDisconnect(mydb))
+
+##Import df 'products'
+# Settings
+db_user <- 'data_student_berlin'
+db_password <- 'waai_has_shitty_internet'
+db_name <- 'pricehub'
+db_table <- 'products'
+db_host <- '34.89.228.59' # for local access
+db_port <- 3306
+
+# Read data from db
+mydb <-  dbConnect(MySQL(), user = db_user, password = db_password,
+                   dbname = db_name, host = db_host, port = db_port)
+s <- paste0("select * from ", db_table)
+rs <- dbSendQuery(mydb, s)
+products <-  fetch(rs, n = -1)
+on.exit(dbDisconnect(mydb))
+
+
+```
+
+
+
+## 2. Save dataset into my local db
+
+
+
+```{r save dataset, echo=FALSE}
+### 2. Save original datasets into my local db
+write_csv2(line_item, "data/line_item.csv")
+write_csv2(orders, "data/orders.csv")
+write_csv2(products, "data/products.csv")
+```
