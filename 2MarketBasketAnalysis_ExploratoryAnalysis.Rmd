@@ -1,0 +1,297 @@
+---
+title: "2MarketBasketAnalysis_ExploratoryAnalysis"
+author: "SuninChoi"
+date: "12/5/2019"
+output: html_document
+Data Quality - Loading the dataset and exploring raw dataset 
+tidying and cleaning data to prepare for analysis
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 1. Read datasets from local computer and load libraries
+
+```{r import dataset}
+library(tidyverse)
+library(ggplot2)
+library(funModeling)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(readr)
+
+getwd()
+item <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/line_item.csv")
+orders <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/orders.csv")
+products <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/products.csv")
+```
+
+
+### 2. Basic understanding dataset
+
+
+```{r understanding dataset, echo=FALSE}
+class(item)
+dim(item)
+head(item)
+tail(item)
+str(item)
+glimpse(item)
+summary(item)
+
+```
+
+
+
+### 3. Data join and clean
+> Create a colume of paid per oders in the line_item table
+* Q. If unit_price is 0, what does it mean?
+
+
+```{r creating a colume of paid per orders }
+item1 <- item %>%  
+  mutate(paid_order = unit_price * product_quantity) %>%
+  group_by(id_order) %>% 
+  summarise(total_paid_order = sum(paid_order))
+```
+
+
+
+> Join(inner) item and orders tables together
+* plus, excluding not"Completed" orders
++ 293743 -> 62103 observations 
+
+
+```{r join item and orders tables}
+item1$id_order <- as.character(item1$id_order)
+orders$id_order <- as.character(orders$id_order)
+
+itemorders1 <- item1 %>% 
+                 inner_join(orders, by = c("id_order" = "id_order"))
+
+itemorders1 <- itemorders1 %>% 
+                na.omit() %>% 
+                filter(state == "Completed")
+
+plot_num(itemorders1)
+
+```
+
+
+> Create a column for paid difference between total_paid and paid per orders
+and select outliers in order to make an adjucted table about item_orders
+* 4 distinguished outliers more than 1000
+* 26 visible outliers more than 100 including above 4 obs.
+* More than 100 and less than -100 in the paid difference shows 62073 outliers
+* Q. price difference under 0 is 1342 obs. 
++ filtered item order table: 62077 obs of 11 variables
+
+
+```{r compare total_paid and paid per orders and remove outliers}
+
+itemorders1 <- itemorders1 %>% 
+  mutate(paiddiffer = total_paid - total_paid_order) %>% 
+  arrange(desc(paiddiffer))
+
+itemorders1 %>% 
+  as_tibble() %>% 
+  count(paiddiffer > 100)# 26 outliers more than 100 different paid
+
+itemorders1 %>% 
+  as_tibble() %>% 
+  count(paiddiffer < 0) # 1342
+
+nrow(itemorders1 %>%
+       filter(paiddiffer<= 100 & paiddiffer >= -100)) # 62073
+
+summary(itemorders1$paiddiffer) # 62103 obs. of 11 var
+#     Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-165.000    0.000    5.000    4.107    7.000 3985.000 
+
+hist(itemorders1$paiddiffer, breaks = 5)
+boxplot(itemorders1$paiddiffer)
+
+ggplot(itemorders1, aes(total_paid_order, total_paid)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+
+fil_it_ord <- itemorders1 %>% 
+  filter(paiddiffer <= 100 & paiddiffer >= -100) %>% 
+  select(id_order)
+  
+item$id_order <- as.character(item$id_order)
+item_filtered_orders <- item %>% inner_join(fil_it_ord, by = "id_order")
+```
+
+
+
+> Join(inner) item and products tables together and create a colume for price difference between unit_price in item and price in products tables
+* 292567 obs. of 17 variables
+
+
+```{r join item and products tables}
+it_pro <- item %>% 
+            inner_join(products, by = "sku")
+
+it_pro1 <- it_pro %>% 
+            group_by(id_order) %>% 
+              mutate(pricediffer = price - unit_price)
+
+```
+
+
+
+> Explore price difference between unit_price and price 
+and select outliers in order to make an adjucted table about item_products
+* the minimum price difference is - 159811
+* the maximum price difference is 115900091
++ filtered item_products table: 249667 obs of 17 variables
++ Notice! even outliers or errors have patterns: 0 price, multiplied prices, decimal errors. Therefore, it is required to check out price input processes
+
+
+```{r compare unit_price and price and remove outliers}
+
+summary(it_pro1$pricediffer)
+
+top10pd_itpro<- it_pro1 %>%  
+                 group_by(id_order) %>% 
+                 arrange(desc(pricediffer))
+
+ggplot(it_pro1, aes(price, unit_price)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+
+it_pro1 %>%    
+    as_tibble() %>% 
+      count(pricediffer > 1000) #9130
+
+it_pro1 %>%   
+    as_tibble() %>% 
+      count(pricediffer < 0) #6409
+
+nrow(it_pro1 %>% filter(pricediffer > 100)) #40998
+nrow(it_pro1 %>% filter(pricediffer < -100)) #1902
+
+fil_it_pro <- it_pro1 %>% 
+                filter(pricediffer <= 100 & pricediffer >= -100)
+
+```
+
+
+
+> Additional explore: Outliers of the price difference based on categories and brands
+* Brand
++ Apple, Pack, Crucial, Sandisk etc. certain brands
++ Notice! some price gaps seem to have errors counting decimal
+* Categories
++ Sum of price difference: smartphone, accessories, other, tablet, service
++ Avg of price difference: smartphone, service, other, tablet, accessories
+
+
+```{r Outliers explore based on categories and brands}
+
+# 1) Analyze sum and avg of price difference based on categories
+cat_count <- it_pro1 %>% 
+                  group_by(manual_categories) %>% 
+                  count(manual_categories) 
+
+priced_sa_cat <- it_pro1 %>% 
+                  group_by(manual_categories) %>% 
+                  summarise(pd_sum_cat = sum(pricediffer), pd_avg_cat = mean(pricediffer)) %>%
+                  arrange(desc(pd_avg_cat)) 
+
+priced_per_cate <- priced_sa_cat %>% 
+                     inner_join(cat_count, by = "manual_categories")
+
+
+# 2) Analyze sum and avg of price difference based on brands
+brand_count <- it_pro1 %>% 
+                group_by(brand) %>% 
+                  count(brand) 
+
+priced_sa_bran <- it_pro1 %>% 
+                  group_by(brand) %>% 
+                  summarise(pd_sum_cat = sum(pricediffer), pd_avg_cat = mean(pricediffer)) %>%
+                  arrange(desc(pd_avg_cat)) 
+
+priced_per_brand <- priced_sa_bran %>% 
+                      inner_join(brand_count, by = "brand")
+
+```
+
+
+
+> Join item_orders and item_products tables and select and arrange neccessary features in a new combined table 
+* 99299 obs. of 17 variables
++ Q. Different id and sku exist in the same id_order and this creates double id, sku, unit_price, date columes.
++ Q. Should i exclude outliers of paid difference by orders before joining this table or is it okay exclude them after joining?
+
+
+```{r join item_order table and item_product}
+
+fil_it_ord$id_order <- as.character(fil_it_ord$id_order)
+fil_it_pro$id_order <- as.character(fil_it_pro$id_order)
+
+iop <- fil_it_ord %>% 
+            inner_join(fil_it_pro, by = "id_order", suffix = c("_io", "_ip"))
+
+iop_id <- fil_it_ord %>% 
+            inner_join(fil_it_pro, by = "id", suffix = c("_io", "_ip"))
+
+iop1 <- iop %>% 
+         select(id_order, id_io, id_ip, sku_io, sku_ip, ProductId, unit_price_ip, price, pricediffer, paid_order, total_paid, paiddiffer, brand, manual_categories, name_en, short_desc_en, date_ip)
+
+ggplot(iop1, aes(unit_price_ip, price, color = manual_categories, size = manual_categories)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+
+ggplot(iop1, aes(paid_order, total_paid, color = manual_categories, size = manual_categories)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+
+
+```
+
+
+
+> Additional change: separate date into dates and hours
+
+
+```{r }
+Hours <- format(as.POSIXct(strptime(iop1$date_ip,"%d/%m/%Y %H:%M",tz="")), format = "%H:%M")
+Dates <- format(as.POSIXct(strptime(iop1$date_ip,"%Y/%m/%d %H:%M",tz="")), format = "%d/%d/%Y")
+
+iop1$dates <- Dates
+iop1$hours <- Hours  
+iop1$dates <- as.Date(iop1$date_ip)
+iop1$hours <- format(as.POSIXct(iop1$date_ip),format = "%H:%M:%S") 
+
+```
+
+
+### Summary
+* The last table for three original tables has 99,299 obs. of 19 variables.
+* The arrange of price difference gap between unit_price and price and paid difference between total_paid and pay per orders is accepted +- 100.
+* However, it is neccessary to consider findings that some patterns in categories and brands related to outliers.
+* In addition, depends on when and how to join the tables together, it creates huge difference on results. Therefore it is required to design and consider when and how to join which tables first and later.    
+
+
+### Data Export and save them as csv.file
+
+
+```{r}
+library(writexl)
+
+write.table(iop1, "item_order_products.txt", col.names = T, row.names = T, sep = "Wt")
+write.csv(iop1, "item_order_products.csv", row.names = T)
+write_xlsx(iop1, path = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference_MarketBasket/data/item_order_products.xlsx", col_names = TRUE)
+
+```
+
