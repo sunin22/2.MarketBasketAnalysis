@@ -1,0 +1,230 @@
+---
+title: "3MaketBasketAnalysis_DataQuality_JoinTablesandExcludeOutliers"
+author: "SuninChoi"
+date: "12/5/2019"
+output: html_document
+Data Quality - Join necessary tables and exclude outliers
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### 1. Read datasets from local computer and load libraries
+
+
+```{r import dataset, echo=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(funModeling)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(readr)
+
+getwd()
+item <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/line_item.csv")
+orders <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/orders.csv")
+products <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/products.csv")
+```
+
+
+
+### 2. Basic understanding dataset
+
+
+```{r basic understanding of dataset, echo=FALSE}
+class(item)
+dim(item)
+head(item)
+tail(item)
+str(item)
+glimpse(item)
+summary(item)
+
+```
+
+
+
+### 3. Data join and clean
+#### 3.1 Create a colume of paid per orders in the line_item table
+
+
+```{r creating a colume of paid per orders }
+item1 <- item %>%  
+  mutate(paid_order = unit_price * product_quantity) %>%
+  group_by(id_order) %>% 
+  summarise(total_paid_order = sum(paid_order))
+
+```
+
+
+
+#### 3.2 Join(inner) item and orders tables together
+* plus, excluding not"Completed" orders
+
+
+```{r join item and orders tables}
+item1$id_order <- as.character(item1$id_order)
+orders$id_order <- as.character(orders$id_order)
+
+item_orders <- item1 %>% 
+                 inner_join(orders, by = "id_order")
+
+item_orders <- item_orders %>% 
+                na.omit() %>% 
+                filter(state == "Completed")
+
+```
+
+
+
+#### 3.2.1 Create a column for paid difference between total_paid and paid per orders and exclude outliers by percentage in order to make an adjusted table of item_order
+
+
+```{r compare total_paid and paid per orders and remove outliers}
+
+itemorders <- item_orders %>% 
+  mutate(paiddiffer = total_paid - total_paid_order) 
+
+ggplot(itemorders, aes(total_paid_order, total_paid)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+
+nrow(itemorders %>% 
+       filter(paiddiffer<= 100 & paiddiffer >= -100)) # 46539
+
+# Summarise total paid difference per id_order and the percentage of difference
+itemorders1 <- itemorders %>% 
+  group_by(id_order) %>% 
+  summarise(totalpaiddiffer = sum(paiddiffer), totalpaiddifferperc = paiddiffer/total_paid)
+
+# Exclude outliers and join with line item
+fil_it_ord <- itemorders1 %>% 
+  filter(totalpaiddifferperc <= 0.3 & totalpaiddifferperc >= -0.3) %>% 
+  select(id_order, totalpaiddifferperc)
+
+nrow(fil_it_ord) # 45345
+
+# Join(inner) item and selected order tables
+item$id_order <- as.character(item$id_order)
+item_filtered_orders <- item %>% 
+  inner_join(fil_it_ord, by = "id_order")
+
+
+```
+
+
+
+#### 3.3 Join(inner) item and products tables together and create a colume for price difference between unit_price in item and price in products tables
+
+
+```{r join item and products tables}
+it_pro <- item %>% 
+  inner_join(products, by = "sku")
+
+it_pro <- it_pro %>%  
+  mutate(pricediffer = price - unit_price, pricedifferperc = unit_price/price)
+
+```
+
+
+
+#### 3.3.1 Explore price difference between unit_price and price and the percentage of difference and delete outliers in order to make an adjucted table about item_products
+* the minimum price difference is - 159811
+* the maximum price difference is 115900091
+
+
+```{r compare unit_price and price and remove outliers}
+
+it_pro %>%    
+    as_tibble() %>% 
+      count(pricediffer > 1000) #9028
+
+it_pro %>% 
+  as_tibble() %>% 
+  count(pricediffer < 0) #5334
+
+nrow(it_pro %>% filter(pricediffer > 100)) #42020
+nrow(it_pro %>% filter(pricediffer < -100)) #1693
+
+# Outliers by percentage and exclude 30% of them
+it_pro <- it_pro %>%  
+  mutate(pricediffer = price - unit_price, pricedifferperc = unit_price/price)
+
+fil_it_pro <- it_pro %>% 
+  filter(pricedifferperc <= 0.3 & pricedifferperc >= -0.3)
+
+nrow(fil_it_pro) #12176
+
+# Join(inner) item and selected product tables
+item$id_order <- as.character(item$id_order)
+item_filtered_products <- 
+  item %>% inner_join(fil_it_pro, by = "id_order")
+
+```
+
+
+
+#### 3.4 Join item, orders, products tables and create a table for a transaction file
+
+
+```{r join tables and create a table for a transaction file}
+
+# Join three tables
+filtered_rev_iop <- item_filtered_orders %>% 
+  inner_join(item_filtered_products, by = "id_order")
+
+filtered_rev_iop <- filtered_rev_iop %>% 
+  select(id_order, sku.x)
+
+trsfile <- filtered_rev_iop %>% 
+  left_join(products, by = c("sku.x" = "sku"))
+
+# Create transactional files with name_en, brand and categories
+trsfile <- trsfile %>% 
+  na.omit() %>% 
+  select(id_order, sku.x, name_en, brand, manual_categories)
+
+trsfile_name <- trsfile %>% 
+  na.omit(name_en) %>% 
+  select(id_order, name_en)
+
+trsfile_brand <- trsfile %>% 
+  na.omit(brand) %>% 
+  select(id_order, brand)
+
+trsfile_cate <- trsfile %>% 
+  na.omit(manual_categories) %>% 
+  select(id_order, manual_categories)
+
+# Because of multiple times joins, redundant sku show so i can choose just one of them because it included in one sku already. 
+```
+
+
+
+### 4. Export the last table as an excel file
+
+
+```{r id_order and sku}
+library(writexl)
+
+# id_order with product name
+write.table(trsfile_name, "trsfile_name.txt", col.names = T, row.names = T, sep = "Wt")
+write.csv(trsfile_name, "trsfile_name.csv", row.names = T)
+write_xlsx(trsfile_name, path = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_name.xlsx", col_names = TRUE)
+
+# id_order with brands
+write.table(trsfile_brand, "trsfile_brand.txt", col.names = T, row.names = T, sep = "Wt")
+write.csv(trsfile_brand, "trsfile_brand.csv", row.names = T)
+write_xlsx(trsfile_brand, path = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_brand.xlsx", col_names = TRUE)
+
+# id_order with categories
+write.table(trsfile_cate, "trsfile_cate.txt", col.names = T, row.names = T, sep = "Wt")
+write.csv(trsfile_cate, "trsfile_cate.csv", row.names = T)
+write_xlsx(trsfile_cate, path = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_cate.xlsx", col_names = TRUE)
+
+```
