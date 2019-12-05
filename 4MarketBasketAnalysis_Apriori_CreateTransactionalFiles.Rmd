@@ -1,0 +1,314 @@
+---
+title: "4MarketBasketAnalysis_Apriori_CreateTransactionalFiles"
+author: "SuninChoi"
+date: "12/5/2019"
+output: html_document
+Arules package and apriori algorithm to create transactional files for recommendation systems
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Market Basket Analysis
+## Arules package and apriori algorithm
+
+### 1. Load trasaction dataset (id_order - name, id_order - brand, id_order - categories)
+
+
+```{r cars}
+library(arules)
+library(arulesViz)
+library(tidyverse)
+library(ggplot2)
+library(funModeling)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(readxl)
+library(readr)
+
+trs_name <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_name.csv")
+
+trs_brand <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_brand.csv")
+
+trs_cate <- read_csv2("C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_cate.csv")
+
+Lt_name <- read.transactions(
+        file = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_name.csv",
+        format = "single",
+        header = TRUE,
+        sep = ",",
+        cols = c("id_order","name_en"),
+        rm.duplicates = T)
+
+Lt_brand <- read.transactions(
+        file = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_brand.csv",
+        format = "single",
+        header = TRUE,
+        sep = ",",
+        cols = c("id_order","brand"),
+        rm.duplicates = T)
+
+Lt_cate <- read.transactions(
+        file = "C:/Users/sunny/Desktop/2.R/Function/BrandPreference-MarketBasket/data/trsfile_cate.csv",
+        format = "single",
+        header = TRUE,
+        sep = ",",
+        cols = c("id_order","manual_categories"),
+        rm.duplicates = T)
+```
+
+
+### 2. Get to know basic item sets and association rules
+#### 2.1 id_order and product names
+##### 2.1.1 Exploring dataset
+* What are the most frequent items? 
++ 1st. Crucial memory Mac 16GB (2x8GB) SO-DIMM DDR3 1600MHZ: 168
++ 2nd. Rugged Messenger Zagg iPad Keyboard Folio (2017) 97 Backlit Black: 161
++ 3rd. Apple iPhone 64GB X Silver: 130
++ 4th. Zagg Folio Case Color Keyboard Folio iPad Air 2 Black: 120
++ 5th. Jawbone UP2 Black Rope Activity Monitor: 93
++ Other 3531
+
+* How many items do customers purchase the most? Least? 
++ sizes
++    1    2    3    4    5    6    7    8    9   10   11 
++ 1371  542  276  113   45   22    5    2    1    4    1 
+
+* What's the average? 
++ Min.  1st Qu.  Median    Mean 3rd Qu.    Max. 
++ 1.000   1.000   1.000   1.764   2.000  11.000 
+
+
+```{r exploring transactional dataset of id_order and product names}
+
+# Exploring transactional dataset between id_order and product names
+summary(Lt_name)
+inspect(Lt_name[1:10]) # view the transactions
+length(Lt_name) # number of transaction 2382
+size(Lt_name) # number of items per transaction
+list(Lt_name) #2382 transactions and 1186 items
+LIST(Lt_name) # lists the transactions by conversation
+itemLabels(Lt_name) # see the item labels
+```
+
+
+##### 2.1.2 Visualizing dataset with itemFrequencyPlot
+
+
+```{r utilizing itemFrequencyPlot}
+# Visualizing association rules with itemFrequencyPlot
+image(Lt_name, method = "graph",  engine = "htmlwidget")
+
+image(sample(Lt_name, 100))
+
+```
+
+
+
+##### 2.1.3 Applying apriori algorithm for market basket analysis 
+* Create association rules related to product names
++ support: 0.0015, confidence: 0.05
++ 1186 item(s), 2382 transaction(s), 83 rule(s)
+
+
+```{r}
+# Applying apriori algorithm for market basket analysis
+rule_name <- apriori(Lt_name, parameter = list(supp=0.0015, conf=0.05, minlen=2, maxlen=8, smax=1))
+
+summary(rule_name)
+
+inspect(rule_name[1:10])
+
+plot(rule_name, method = "graph",  engine = "htmlwidget")
+
+# Exploring various plots
+plot(rule_name, control = list(col=brewer.pal(11,"Spectral")))
+plot(rule_name, method="two-key plot")
+plot(rule_name, method = "grouped")
+plot(rule_name, method = "graph")
+plot(rule_name[1:10], method = "graph", control = list(type = "items"))
+plot(rule_name, method = "matrix", measure = "lift", control = list(col=brewer.pal(11, "Spectral")))
+plot(rule_name, method = "matrix3D", measure = "lift")
+plot(rule_name, method = "paracoord", control = list(reorder = TRUE))
+
+
+```
+
+
+* Diverse ways of filtering association rules based on confidence, life, support
+
+
+```{r various filtering ways of association rules}
+# Create subset of association rules based on high confidence
+subrule_name<- rule_name[quality(rule_name)$confidence>0.4]
+plot(subrule_name)
+plotly_arules(subrule_name)
+
+# Filter top 10 rules with highest confidence 
+top10subrule_name <- head(subrule_name, n = 10, by = "confidence")
+plot(top10subrule_name, method = "graph",  engine = "htmlwidget")
+saveAsGraph(head(subrule_name, n = 1000, by = "lift"), file = "rules.graphml")
+
+# Filter top 20 rules with highest lift
+subrule_name2<-head(subrule_name, n=20, by="lift")
+plot(subrule_name2, method="paracoord")
+
+subrule_name3 <-sort(subrule_name, by="confidence",decreasing = TRUE)
+inspect(subrule_name3[1:5])
+
+```
+
+
+
+#### 2.2 id_order and brands
+##### 2.2.1 Exploring dataset
+2382 rows 115 columns
+
+* What are the most frequent items?
++ 1st. Apple - 599
++ 2nd. ZaggKeys - 340  
++ 3rd. Pack - 290
++ 4th. Crucial - 269
++ 5th. Jawbone - 153
++ Other - 2094 
+
+* How many items do customers purchase the most? Least? (source for Loyal customers, related brands)
++   1    2    3    4    5    6    7    8    9 
++1508  539  222   84   23    3    1    1    1 
+
+* What's the average? 
++   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
++ 1.000   1.000   1.000   1.572   2.000   9.000 
+
+
+```{r exploring transactional dataset of id_order and brands}
+summary(Lt_brand)
+inspect(Lt_brand[1:10]) # view the transactions
+length(Lt_brand) # number of transaction
+size(Lt_brand[1:10]) # number of items per transaction
+list(Lt_brand)
+LIST(Lt_brand) # lists the transactions by conversation
+itemLabels(Lt_brand) # see the item labels
+
+```
+
+
+##### 2.2.2 Visualizing dataset with itemFrequencyPlot
+* the first brand(Apple) is almost double size of 2nd brand(ZaggKeys)
+
+
+```{r visualizing dataset with itemFrequencyPlot}
+
+itemFrequencyPlot(Lt_brand, topN=10, type="absolute", col=brewer.pal(8,'Pastel2'), main="Absolute Item Frequency Plot")
+
+itemFrequencyPlot(Lt_brand, topN=10, type="relative", col=brewer.pal(8,'Pastel2'), main="Relative Item Frequency Plot")
+image(sample(Lt_brand, 100))
+```
+
+
+##### 2.2.3 Applying apriori algorithm for market basket analysis 
+* Create association rules related to brands
++ support: 0.004, confidence: 0.06
++ 115 item(s), 2382 transaction(s), 53 rule(s)
+
+
+```{r apriori algorithm and plots for market basket analysis based on brands}
+# Applying apriori algorithm for market basket analysis
+rule_brand <- apriori(Lt_brand, parameter = list(supp=0.004, conf=0.06, minlen=2, maxlen=8, smax=1))
+
+summary(rule_brand)
+
+inspect(rule_brand[1:10])
+
+plot(rule_brand, method = "graph",  engine = "htmlwidget")
+plot(rule_brand[1:20], method = "graph", control = list(type = "items"))
+
+# Exploring various plots
+plot(rule_brand, control = list(col=brewer.pal(11,"Spectral")))
+plot(rule_brand, method="two-key plot")
+plot(rule_brand, method = "grouped")
+plot(rule_brand, method = "graph")
+plot(rule_brand, interactive = TRUE)
+plot(rule_brand, method = "matrix", measure = "lift", control = list(col=brewer.pal(11, "Spectral")))
+plot(rule_brand, method = "matrix3D", measure = "lift")
+plot(rule_brand, method = "paracoord", control = list(reorder = TRUE))
+
+```
+
+
+
+#### 2.3 id_order and categories
+##### 2.3.1 Exploring dataset
+2382 rows and 12 columns (categories)
+
+* What are the most frequent items?
++ accessories  smartphone     display     service       other     (Other) 
++        1900         298         168         133         109         186 
+
+* How many items do customers purchase the most? Least? 
++    1    2    3    4    5 
++ 2037  285   54    5    1 
++ Most of times, customers buy just one category product up to 5 categories
+
+* What's the average? 
++   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
++ 1.000   1.000   1.000   1.173   1.000   5.000 
+
+
+```{r}
+summary(Lt_cate)
+inspect(Lt_cate) # view the transactions
+length(Lt_cate) # number of transaction
+size(Lt_cate) # number of items per transaction
+list(Lt_cate)
+LIST(Lt_cate) # lists the transactions by conversation
+itemLabels(Lt_cate) # see the item labels
+```
+
+
+##### 2.3.2 Visualizing dataset with itemFrequencyPlot
+* Transaction quatity of accessories dominate that of every other categories
+
+
+```{r}
+itemFrequencyPlot(Lt_cate, topN=10, type="absolute", col=brewer.pal(8,'Pastel2'), main="Absolute Item Frequency Plot")
+
+itemFrequencyPlot(Lt_cate, topN=10, type="relative", col=brewer.pal(8,'Pastel2'), main="Relative Item Frequency Plot")
+
+image(sample(Lt_cate, 100))
+
+```
+
+
+##### 2.3.3 Applying apriori algorithm for market basket analysis 
+* Create association rules related to categories
++ support: 0.001, confidence: 0.02
++ 12 item(s), 2382 transaction(s), 51 rule(s)
+
+
+```{r apriori algorithm and plots for market basket analysis based on categories}
+# Applying apriori algorithm for market basket analysis
+rule_cate <- apriori(Lt_cate, parameter = list(supp=0.001, conf=0.02, minlen=2, maxlen=8, smax=1))
+
+summary(rule_cate)
+
+inspect(rule_cate[1:10])
+
+plot(rule_cate, method = "graph",  engine = "htmlwidget")
+plot(rule_cate[1:20], method = "graph", control = list(type = "items"))
+
+# Exploring various plots
+plot(rule_cate, control = list(col=brewer.pal(11,"Spectral")))
+plot(rule_cate, method="two-key plot")
+plot(rule_cate, method = "grouped")
+plot(rule_cate, method = "graph")
+plot(rule_cate, interactive = TRUE)
+plot(rule_cate, method = "matrix", measure = "lift", control = list(col=brewer.pal(11, "Spectral")))
+plot(rule_cate, method = "matrix3D", measure = "lift")
+plot(rule_cate, method = "paracoord", control = list(reorder = TRUE))
+
+```
+
